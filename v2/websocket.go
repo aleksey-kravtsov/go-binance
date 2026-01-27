@@ -67,19 +67,19 @@ var wsServeWithConnHandler = func(cfg *WsConfig, handler WsHandler, errHandler E
 	doneC = make(chan struct{})
 	stopC = make(chan struct{})
 
-	// Custom connection handling, useful in active keepalive scenarios
-	if connHandler != nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go connHandler(ctx, c)
-	}
-
 	go func() {
 		// This function will exit either on error from
 		// websocket.Conn.ReadMessage or when the stopC channel is
 		// closed by the client.
 
 		defer close(doneC)
+
+		// Custom connection handling, useful in active keepalive scenarios
+		if connHandler != nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go connHandler(ctx, c)
+		}
 
 		// Wait for the stopC channel to be closed.  We do that in a
 		// separate goroutine because ReadMessage is a blocking
@@ -123,21 +123,24 @@ func keepAliveWithPing(interval time.Duration, pongTimeout time.Duration) ConnHa
 		lastPongTicker := time.NewTicker(pongTimeout)
 		defer lastPongTicker.Stop()
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := c.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(WebsocketPingTimeout)); err != nil {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
 					return
-				}
-			case <-lastPongTicker.C:
-				if time.Since(time.Unix(atomic.LoadInt64(&lastResponse), 0)) > pongTimeout {
-					c.Close()
-					return
+				case <-ticker.C:
+					if err := c.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(WebsocketPingTimeout)); err != nil {
+						return
+					}
+				case <-lastPongTicker.C:
+					if time.Since(time.Unix(atomic.LoadInt64(&lastResponse), 0)) > pongTimeout {
+						c.Close()
+						return
+					}
 				}
 			}
-		}
+
+		}()
 	}
 }
 
@@ -165,17 +168,19 @@ func keepAliveWithPong(ctx context.Context, c *websocket.Conn, timeout time.Dura
 		return nil
 	})
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if time.Since(time.Unix(atomic.LoadInt64(&lastResponse), 0)) > timeout {
-				c.Close()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
 				return
+			case <-ticker.C:
+				if time.Since(time.Unix(atomic.LoadInt64(&lastResponse), 0)) > timeout {
+					c.Close()
+					return
+				}
 			}
 		}
-	}
+	}()
 }
 
 var WsGetReadWriteConnection = func(cfg *WsConfig) (*websocket.Conn, error) {
