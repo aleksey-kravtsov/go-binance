@@ -1178,7 +1178,7 @@ func WsAnnouncementServe(params WsAnnouncementParam, handler WsAnnouncementHandl
 		}
 		handler(e)
 	}
-	return wsServeWithConnHandler(cfg, wsHandler, errHandler, keepAliveWithPing(30*time.Second, WebsocketTimeout))
+	return wsServeWithConnHandler(cfg, wsHandler, errHandler)
 }
 
 // getWsApiEndpoint return the base endpoint of the API WS according the UseTestnet flag
