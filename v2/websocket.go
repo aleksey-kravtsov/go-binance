@@ -32,19 +32,13 @@ func newWsConfig(endpoint string) *WsConfig {
 }
 
 func wsServe(cfg *WsConfig, handler WsHandler, errHandler ErrHandler) (doneC, stopC chan struct{}, err error) {
-	return wsServeWithConnHandler(cfg, handler, errHandler, func(ctx context.Context, c *websocket.Conn) {
-		if WebsocketKeepalive {
-			// This function overwrites the default ping frame handler
-			// sent by the websocket API server
-			keepAliveWithPong(ctx, c, WebsocketTimeout)
-		}
-	})
+	return wsServeWithConnHandler(cfg, handler, errHandler)
 }
 
 type ConnHandler func(context.Context, *websocket.Conn)
 
 // WsServeWithConnHandler serves websocket with custom connection handler, useful for custom keepalive
-var wsServeWithConnHandler = func(cfg *WsConfig, handler WsHandler, errHandler ErrHandler, connHandler ConnHandler) (doneC, stopC chan struct{}, err error) {
+var wsServeWithConnHandler = func(cfg *WsConfig, handler WsHandler, errHandler ErrHandler) (doneC, stopC chan struct{}, err error) {
 	proxy := http.ProxyFromEnvironment
 	if cfg.Proxy != nil {
 		u, err := url.Parse(*cfg.Proxy)
@@ -73,13 +67,6 @@ var wsServeWithConnHandler = func(cfg *WsConfig, handler WsHandler, errHandler E
 		// closed by the client.
 
 		defer close(doneC)
-
-		// Custom connection handling, useful in active keepalive scenarios
-		if connHandler != nil {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go connHandler(ctx, c)
-		}
 
 		// Wait for the stopC channel to be closed.  We do that in a
 		// separate goroutine because ReadMessage is a blocking
