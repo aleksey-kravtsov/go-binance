@@ -62,35 +62,45 @@ var wsServeWithConnHandler = func(cfg *WsConfig, handler WsHandler, errHandler E
 	stopC = make(chan struct{})
 
 	go func() {
-		// This function will exit either on error from
-		// websocket.Conn.ReadMessage or when the stopC channel is
-		// closed by the client.
-
 		defer close(doneC)
+		defer c.Close()
 
-		// Wait for the stopC channel to be closed.  We do that in a
-		// separate goroutine because ReadMessage is a blocking
-		// operation.
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
 		silent := false
-		go func() {
+
+		for {
 			select {
+			case <-ticker.C:
+				if err := c.WriteControl(
+					websocket.PingMessage,
+					nil,
+					time.Now().Add(time.Second),
+				); err != nil {
+					if !silent {
+						errHandler(err)
+					}
+					return
+				}
+
 			case <-stopC:
 				silent = true
-			case <-doneC:
-			}
-			c.Close()
-		}()
-		for {
-			_, message, err := c.ReadMessage()
-			if err != nil {
-				if !silent {
-					errHandler(err)
-				}
 				return
+
+			default:
+				_, message, err := c.ReadMessage()
+				if err != nil {
+					if !silent {
+						errHandler(err)
+					}
+					return
+				}
+				handler(message)
 			}
-			handler(message)
 		}
 	}()
+
 	return
 }
 
